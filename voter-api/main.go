@@ -84,9 +84,10 @@ func main() {
 	app.Put("/voters/:id<int;min(0)>", apiHandler.UpdateVoter)
 	app.Delete("/voters/:id<int;min(0)>", apiHandler.DeleteVoter)
 
-	// app.Get("/voters/:id<int;min(0)>/polls", apiHandler.GetVoterHistory)
+	app.Get("/voters/:id<int;min(0)>/polls", apiHandler.GetVoterHistory)
 
-	// app.Get("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.GetVoterHistoryPoll)
+	// TODO: implement remaining three history functions
+	app.Get("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.GetVoterHistoryPoll)
 	// app.Get("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.AddVoterHistoryPoll)
 	// app.Put("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.UpdateVoterHistoryPoll)
 	// app.Delete("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.DeleteVoterHistoryPoll)

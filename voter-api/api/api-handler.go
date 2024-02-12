@@ -69,6 +69,57 @@ func (va *VoterAPI) GetVoter(c *fiber.Ctx) error {
 	return c.JSON(voter)
 }
 
+func (va *VoterAPI) GetVoterHistory(c *fiber.Ctx) error {
+
+	//Note go is minimalistic, so we have to get the
+	//id parameter using the Param() function, and then
+	//convert it to an int64 using the strconv package
+	id, err := c.ParamsInt("id")
+	if err != nil {
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	//Note that ParseInt always returns an int64, so we have to
+	//convert it to an int before we can use it.
+	voter, err := va.db.GetVoter(uint(id))
+	if err != nil {
+		log.Println("Voter not found: ", err)
+		return fiber.NewError(http.StatusNotFound)
+	}
+
+	//Git will automatically convert the struct to JSON
+	//and set the content-type header to application/json
+	return c.JSON(voter.VoteHistory)
+}
+
+func (va *VoterAPI) GetVoterHistoryPoll(c *fiber.Ctx) error {
+
+	//Note go is minimalistic, so we have to get the
+	//id parameter using the Param() function, and then
+	//convert it to an int64 using the strconv package
+	id, err := c.ParamsInt("id")
+	poll_id, err2 := c.ParamsInt("pollid")
+	if err != nil || err2 != nil {
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	voter, err := va.db.GetVoter(uint(id))
+	if err != nil {
+		log.Println("Voter not found: ", err)
+		return fiber.NewError(http.StatusNotFound)
+	}
+
+	pollHistory, err := voter.GetHistoryByPollId(uint(poll_id))
+	if err != nil {
+		log.Println("Voter history not found: ", err)
+		return fiber.NewError(http.StatusNotFound)
+	}
+
+	//Git will automatically convert the struct to JSON
+	//and set the content-type header to application/json
+	return c.JSON(pollHistory)
+}
+
 // implementation for POST /todo
 // adds a new todo
 func (va *VoterAPI) AddVoter(c *fiber.Ctx) error {
@@ -95,11 +146,12 @@ func (va *VoterAPI) AddVoter(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusInternalServerError)
 	}
 
-	return c.JSON(voter)
+	return c.Status(fiber.StatusCreated).JSON(voter)
 }
 
 // implementation for PUT /todo
 // Web api standards use PUT for Updates
+// TODO: this should not update the voter history data
 func (va *VoterAPI) UpdateVoter(c *fiber.Ctx) error {
 	var voter db.Voter
 	if err := c.BodyParser(&voter); err != nil {
