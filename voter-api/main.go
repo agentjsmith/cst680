@@ -54,23 +54,7 @@ func processCmdLineFlags() {
 	flag.Parse()
 }
 
-// main is the entry point for our voter API application.  It processes
-// the command line flags and then uses the db package to perform the
-// requested operation
-func main() {
-	processCmdLineFlags()
-
-	app := fiber.New()
-	app.Use(cors.New())
-	app.Use(recover.New())
-	app.Use(logger.New())
-
-	apiHandler, err := api.New()
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
+func addRoutes(app *fiber.App, apiHandler *api.VoterAPI) {
 	//HTTP Standards for "REST" APIS
 	//GET - Read/Query
 	//POST - Create
@@ -88,11 +72,32 @@ func main() {
 
 	// TODO: implement remaining three history functions
 	app.Get("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.GetVoterHistoryPoll)
-	// app.Get("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.AddVoterHistoryPoll)
-	// app.Put("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.UpdateVoterHistoryPoll)
-	// app.Delete("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.DeleteVoterHistoryPoll)
+	app.Post("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.AddVoterHistoryPoll)
+	app.Put("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.UpdateVoterHistoryPoll)
+	app.Delete("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.DeleteVoterHistoryPoll)
 
 	app.Get("/voters/health", apiHandler.HealthCheck)
+
+}
+
+// main is the entry point for our voter API application.  It processes
+// the command line flags and then uses the db package to perform the
+// requested operation
+func main() {
+	processCmdLineFlags()
+
+	app := fiber.New()
+	app.Use(cors.New())
+	app.Use(recover.New())
+	app.Use(logger.New())
+
+	apiHandler, err := api.New()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	addRoutes(app, apiHandler)
 
 	serverPath := fmt.Sprintf("%s:%d", hostFlag, portFlag)
 	log.Println("Starting server on ", serverPath)

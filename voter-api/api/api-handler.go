@@ -103,13 +103,7 @@ func (va *VoterAPI) GetVoterHistoryPoll(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusBadRequest)
 	}
 
-	voter, err := va.db.GetVoter(uint(id))
-	if err != nil {
-		log.Println("Voter not found: ", err)
-		return fiber.NewError(http.StatusNotFound)
-	}
-
-	pollHistory, err := voter.GetHistoryByPollId(uint(poll_id))
+	pollHistory, err := va.db.GetHistoryByPollId(uint(id), uint(poll_id))
 	if err != nil {
 		log.Println("Voter history not found: ", err)
 		return fiber.NewError(http.StatusNotFound)
@@ -118,6 +112,71 @@ func (va *VoterAPI) GetVoterHistoryPoll(c *fiber.Ctx) error {
 	//Git will automatically convert the struct to JSON
 	//and set the content-type header to application/json
 	return c.JSON(pollHistory)
+}
+
+func (va *VoterAPI) AddVoterHistoryPoll(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	poll_id, err2 := c.ParamsInt("pollid")
+	if err != nil || err2 != nil {
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	var newPollHistory db.VoterHistory
+
+	if err = c.BodyParser(&newPollHistory); err != nil {
+		log.Println("Error binding JSON: ", err)
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	result, err := va.db.AddHistoryByPollId(uint(id), uint(poll_id), newPollHistory)
+	if err != nil {
+		return fiber.NewError(http.StatusInternalServerError)
+	}
+
+	//Git will automatically convert the struct to JSON
+	//and set the content-type header to application/json
+	return c.Status(http.StatusCreated).JSON(result)
+
+}
+
+func (va *VoterAPI) UpdateVoterHistoryPoll(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	poll_id, err2 := c.ParamsInt("pollid")
+	if err != nil || err2 != nil {
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	var newPollHistory db.VoterHistory
+	if err = c.BodyParser(&newPollHistory); err != nil {
+		log.Println("Error binding JSON: ", err)
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	history, err := va.db.UpdateHistoryByPollId(uint(id), uint(poll_id), newPollHistory)
+	if err != nil {
+		return fiber.NewError(http.StatusInternalServerError)
+	}
+
+	//Git will automatically convert the struct to JSON
+	//and set the content-type header to application/json
+	return c.Status(http.StatusOK).JSON(history)
+
+}
+
+func (va *VoterAPI) DeleteVoterHistoryPoll(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	poll_id, err2 := c.ParamsInt("pollid")
+	if err != nil || err2 != nil {
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	err = va.db.DeleteHistoryByPollId(uint(id), uint(poll_id))
+	if err != nil {
+		return fiber.NewError(http.StatusInternalServerError)
+	}
+
+	return c.Status(http.StatusOK).JSON(struct{}{})
+
 }
 
 // implementation for POST /todo

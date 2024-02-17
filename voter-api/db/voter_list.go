@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 )
 
 type VoterList struct {
@@ -123,6 +124,73 @@ func (vl *VoterList) UpdateVoter(item Voter) error {
 	vl.Voters[item.VoterId] = item
 
 	return nil
+}
+
+func (vl *VoterList) GetHistoryByPollId(userId, pollId uint) (VoterHistory, error) {
+	v, ok := vl.Voters[userId]
+	if !ok {
+		return VoterHistory{}, errors.New("voter does not exist")
+	}
+
+	for i := range v.VoteHistory {
+		if v.VoteHistory[i].PollId == pollId {
+			return v.VoteHistory[i], nil
+		}
+	}
+	return VoterHistory{}, errors.New("poll not found in voter history")
+}
+
+func (vl *VoterList) AddHistoryByPollId(userId, pollId uint, newHistory VoterHistory) (VoterHistory, error) {
+	v, ok := vl.Voters[userId]
+	if !ok {
+		return VoterHistory{}, errors.New("voter does not exist")
+	}
+
+	for i := range v.VoteHistory {
+		if v.VoteHistory[i].PollId == pollId {
+			return VoterHistory{}, errors.New("voter history already exists for that poll")
+		}
+	}
+
+	v.VoteHistory = append(v.VoteHistory, newHistory)
+	vl.Voters[userId] = v
+
+	return newHistory, nil
+}
+
+func (vl *VoterList) UpdateHistoryByPollId(userId, pollId uint, newHistory VoterHistory) (VoterHistory, error) {
+	v, ok := vl.Voters[userId]
+	if !ok {
+		return VoterHistory{}, errors.New("voter does not exist")
+	}
+
+	for i := range v.VoteHistory {
+		if v.VoteHistory[i].PollId == pollId {
+			vl.Voters[userId].VoteHistory[i] = newHistory
+			return newHistory, nil
+		}
+	}
+
+	return VoterHistory{}, errors.New("poll not found in voter history")
+}
+
+func (vl *VoterList) DeleteHistoryByPollId(userId, pollId uint) error {
+	v, ok := vl.Voters[userId]
+	if !ok {
+		return errors.New("voter does not exist")
+	}
+
+	for i := range v.VoteHistory {
+		if v.VoteHistory[i].PollId == pollId {
+			newHistory := slices.Delete(v.VoteHistory, i, i+1)
+			v.VoteHistory = newHistory
+			vl.Voters[userId] = v
+
+			return nil
+		}
+	}
+
+	return errors.New("poll not found in voter history")
 }
 
 // GetItem accepts an item id and returns the item from the DB.
