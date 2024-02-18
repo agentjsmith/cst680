@@ -52,6 +52,21 @@ func voterPollUrlById(vid, pid uint) string {
 	return fmt.Sprintf("%s/voters/%d/polls/%d", BASE_API, vid, pid)
 }
 
+var storedHealth api.HealthCheckResult
+
+func Test_HealthBeforeActivity(t *testing.T) {
+	var health api.HealthCheckResult
+	rsp, err := cli.R().SetResult(&health).Get(BASE_API + "/voters/health")
+
+	// store the results of this health check so we can test that the
+	// counters increased at the end
+	storedHealth = health
+
+	assert.Nil(t, err)
+	assert.Equal(t, 200, rsp.StatusCode())
+	assert.Equal(t, "ok", health.Status)
+}
+
 func Test_SetupDb(t *testing.T) {
 	rsp, err := cli.R().Delete(BASE_API + "/voters")
 	if err != nil {
@@ -408,9 +423,16 @@ func Test_DeleteVoterHistoryPoll(t *testing.T) {
 	})
 }
 
-func Test_Health(t *testing.T) {
+func Test_HealthAfterActivity(t *testing.T) {
 	var health api.HealthCheckResult
 	rsp, err := cli.R().SetResult(&health).Get(BASE_API + "/voters/health")
+
 	assert.Nil(t, err)
 	assert.Equal(t, 200, rsp.StatusCode())
+	assert.Equal(t, "ok", health.Status)
+
+	assert.Equal(t, health.Version, storedHealth.Version)
+	assert.GreaterOrEqual(t, health.Uptime, storedHealth.Uptime)
+	assert.Greater(t, health.Transactions, storedHealth.Transactions)
+	assert.Greater(t, health.Errors, storedHealth.Errors)
 }
