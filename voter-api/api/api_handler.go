@@ -100,8 +100,6 @@ func (va *VoterAPI) GetVoterHistory(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusNotFound)
 	}
 
-	//Git will automatically convert the struct to JSON
-	//and set the content-type header to application/json
 	return c.JSON(voter.VoteHistory)
 }
 
@@ -125,8 +123,6 @@ func (va *VoterAPI) GetVoterHistoryPoll(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusNotFound)
 	}
 
-	//Git will automatically convert the struct to JSON
-	//and set the content-type header to application/json
 	return c.JSON(pollHistory)
 }
 
@@ -154,8 +150,6 @@ func (va *VoterAPI) AddVoterHistoryPoll(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusInternalServerError)
 	}
 
-	//Git will automatically convert the struct to JSON
-	//and set the content-type header to application/json
 	return c.Status(http.StatusCreated).JSON(result)
 
 }
@@ -183,8 +177,6 @@ func (va *VoterAPI) UpdateVoterHistoryPoll(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusInternalServerError)
 	}
 
-	//Git will automatically convert the struct to JSON
-	//and set the content-type header to application/json
 	return c.Status(http.StatusOK).JSON(history)
 
 }
@@ -324,9 +316,7 @@ func (va *VoterAPI) DeleteAllVoters(c *fiber.Ctx) error {
 }
 
 // implementation of GET /health. It is a good practice to build in a
-// health check for your API.  Below the results are just hard coded
-// but in a real API you can provide detailed information about the
-// health of your API with a Health Check
+// health check for your API.
 
 type HealthCheckResult struct {
 	Status       string `json:"status"`
