@@ -1,16 +1,13 @@
-## ToDo API Demo
+## Voter API
 
-This is a demo application showing many aspects of how to use the Golang Gin
-framework to create an API.
+`make build` to build
 
-It keeps `todo` items in memory for this demo.  The makefile allows you to 
-exercise the API.  For example you can load the database, query by item,
-and so on.
+`make run` to start the server (listens on 0.0.0.0:1080)
 
-To see everything you can do you can just run `make` and get help.  See below.  Also notice that some of the make targets take parameters.  To do this you add a key=value on the `make` command line.  For example, to get a `todo` with an id of `2`. you run `make id=2 get-by-id`
+`make test` to run tests, note that server needs to be running for e2e tests to run
 
 ```
-➜  todo-api git:(main) make
+➜  voter-api git:(main) make
 Usage make <TARGET>
 
   Targets:
@@ -27,12 +24,3 @@ Usage make <TARGET>
            get-v2-all                   Get all todos using version 2
 ```
 
-### Why use the gin framework?
-
-Many people in the golang community are opposed to using frameworks because the standard library provides robust function out-of-the-box.  However, the golang gin framework reduces a lot of the code you need to write and has a lot of nice features out of the box.  As far as I know its still the most popular and widely used API framework for go.
-
-Online documentation for gin can be found here:
-
-1. GitHub page: https://github.com/gin-gonic/gin
-2. Go Docs: https://pkg.go.dev/github.com/gin-gonic/gin?utm_source=godoc
-3. Gin homepage: https://gin-gonic.com/
