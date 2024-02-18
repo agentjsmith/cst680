@@ -62,6 +62,7 @@ func addRoutes(app *fiber.App, apiHandler *api.VoterAPI) {
 	//DELETE - Delete
 
 	app.Get("/voters", apiHandler.GetAllVoters)
+	app.Delete("/voters", apiHandler.DeleteAllVoters)
 
 	app.Get("/voters/:id<int;min(0)>", apiHandler.GetVoter)
 	app.Post("/voters/:id<int;min(0)>", apiHandler.AddVoter)
@@ -70,7 +71,6 @@ func addRoutes(app *fiber.App, apiHandler *api.VoterAPI) {
 
 	app.Get("/voters/:id<int;min(0)>/polls", apiHandler.GetVoterHistory)
 
-	// TODO: implement remaining three history functions
 	app.Get("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.GetVoterHistoryPoll)
 	app.Post("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.AddVoterHistoryPoll)
 	app.Put("/voters/:id<int;min(0)>/polls/:pollid<int;min(0)>", apiHandler.UpdateVoterHistoryPoll)

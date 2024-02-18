@@ -1,9 +1,7 @@
 package db
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 )
 
@@ -78,6 +76,10 @@ func (vl *VoterList) DeleteVoter(id uint) error {
 	// we should if item exists before trying to delete it
 	// this is a good practice, return an error if the
 	// item does not exist
+	_, ok := vl.Voters[id]
+	if !ok {
+		return errors.New("voter not found")
+	}
 
 	//Now lets use the built-in go delete() function to remove
 	//the item from our map
@@ -193,20 +195,6 @@ func (vl *VoterList) DeleteHistoryByPollId(userId, pollId uint) error {
 	return errors.New("poll not found in voter history")
 }
 
-// GetItem accepts an item id and returns the item from the DB.
-// Preconditions:   (1) The database file must exist and be a valid
-//
-//					(2) The item must exist in the DB
-//	    				because we use the item.Id as the key, this
-//						function must check if the item already
-//	    				exists in the DB, if not, return an error
-//
-// Postconditions:
-//
-//	 (1) The item will be returned, if it exists
-//		(2) If there is an error, it will be returned
-//			along with an empty Voter
-//		(3) The database file will not be modified
 func (vl *VoterList) GetVoter(id uint) (Voter, error) {
 
 	// Check if item exists before trying to get it
@@ -220,16 +208,6 @@ func (vl *VoterList) GetVoter(id uint) (Voter, error) {
 	return item, nil
 }
 
-// GetAllItems returns all items from the DB.  If successful it
-// returns a slice of all of the items to the caller
-// Preconditions:   (1) The database file must exist and be a valid
-//
-// Postconditions:
-//
-//	 (1) All items will be returned, if any exist
-//		(2) If there is an error, it will be returned
-//			along with an empty slice
-//		(3) The database file will not be modified
 func (vl *VoterList) GetAllVoters() ([]Voter, error) {
 
 	//Now that we have the DB loaded, lets crate a slice
@@ -242,35 +220,4 @@ func (vl *VoterList) GetAllVoters() ([]Voter, error) {
 
 	//Now that we have all of our items in a slice, return it
 	return voters, nil
-}
-
-// PrintItem accepts a Voter and prints it to the console
-// in a JSON pretty format. As some help, look at the
-// json.MarshalIndent() function from our in class go tutorial.
-func (vl *VoterList) PrintVoter(item Voter) {
-	jsonBytes, _ := json.MarshalIndent(item, "", "  ")
-	fmt.Println(string(jsonBytes))
-}
-
-// PrintAllItems accepts a slice of Voters and prints them to the console
-// in a JSON pretty format.  It should call PrintItem() to print each item
-// versus repeating the code.
-func (vl *VoterList) PrintAllVoters(itemList []Voter) {
-	for _, item := range itemList {
-		vl.PrintVoter(item)
-	}
-}
-
-// JsonToItem accepts a json string and returns a Voter
-// This is helpful because the CLI accepts todo items for insertion
-// and updates in JSON format.  We need to convert it to a Voter
-// struct to perform any operations on it.
-func (vl *VoterList) JsonToVoter(jsonString string) (Voter, error) {
-	var item Voter
-	err := json.Unmarshal([]byte(jsonString), &item)
-	if err != nil {
-		return Voter{}, err
-	}
-
-	return item, nil
 }

@@ -183,20 +183,19 @@ func (va *VoterAPI) DeleteVoterHistoryPoll(c *fiber.Ctx) error {
 // adds a new todo
 func (va *VoterAPI) AddVoter(c *fiber.Ctx) error {
 	var voter db.Voter
-
-	//With HTTP based APIs, a POST request will usually
-	//have a body that contains the data to be added
-	//to the database.  The body is usually JSON, so
-	//we need to bind the JSON to a struct that we
-	//can use in our code.
-	//This framework exposes the raw body via c.Request.Body
-	//but it also provides a helper function BodyParser
-	//that will extract the body, convert it to JSON and
-	//bind it to a struct for us.  It will also report an error
-	//if the body is not JSON or if the JSON does not match
-	//the struct we are binding to.
 	if err := c.BodyParser(&voter); err != nil {
 		log.Println("Error binding JSON: ", err)
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	id, err := c.ParamsInt("id")
+	if err != nil {
+		log.Println("id param missing or not an int")
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	if uint(id) != voter.VoterId {
+		log.Println("id param does not match payload")
 		return fiber.NewError(http.StatusBadRequest)
 	}
 
@@ -210,13 +209,34 @@ func (va *VoterAPI) AddVoter(c *fiber.Ctx) error {
 
 // implementation for PUT /todo
 // Web api standards use PUT for Updates
-// TODO: this should not update the voter history data
 func (va *VoterAPI) UpdateVoter(c *fiber.Ctx) error {
 	var voter db.Voter
 	if err := c.BodyParser(&voter); err != nil {
 		log.Println("Error binding JSON: ", err)
 		return fiber.NewError(http.StatusBadRequest)
 	}
+
+	id, err := c.ParamsInt("id")
+	if err != nil {
+		log.Println("id param missing or not an int")
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	if uint(id) != voter.VoterId {
+		log.Println("id param does not match payload")
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	// This function is supposed to update the voter details only,
+	// not the history, so we need to save the old history and use
+	// it to replace whatever was passed in.
+	oldVoter, err := va.db.GetVoter(uint(id))
+	if err != nil {
+		log.Println("User not found for update: ", err)
+		return fiber.NewError(http.StatusNotFound)
+	}
+
+	voter.VoteHistory = oldVoter.VoteHistory
 
 	if err := va.db.UpdateVoter(voter); err != nil {
 		log.Println("Error updating item: ", err)
@@ -251,7 +271,7 @@ func (va *VoterAPI) DeleteAllVoters(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusInternalServerError)
 	}
 
-	return c.Status(http.StatusOK).SendString("Delete All OK")
+	return c.Status(http.StatusOK).SendString("I hope you meant to do that!")
 }
 
 // implementation of GET /health. It is a good practice to build in a
@@ -259,13 +279,22 @@ func (va *VoterAPI) DeleteAllVoters(c *fiber.Ctx) error {
 // but in a real API you can provide detailed information about the
 // health of your API with a Health Check
 // TODO: make values realistic for extra credit
+
+type HealthCheckResult struct {
+	Status       string `json:"status"`
+	Version      string `json:"version"`
+	Uptime       uint   `json:"uptime"`
+	Transactions uint   `json:"transaction_count"`
+	Errors       uint   `json:"error_count"`
+}
+
 func (va *VoterAPI) HealthCheck(c *fiber.Ctx) error {
 	return c.Status(http.StatusOK).
-		JSON(fiber.Map{
-			"status":             "ok",
-			"version":            "1.0.0",
-			"uptime":             100,
-			"users_processed":    1000,
-			"errors_encountered": 10,
+		JSON(HealthCheckResult{
+			Status:       "ok",
+			Version:      "1.0.0",
+			Uptime:       100,
+			Transactions: 1000,
+			Errors:       10,
 		})
 }
