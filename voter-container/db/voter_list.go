@@ -1,223 +1,263 @@
 package db
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
-	"slices"
+	"fmt"
+	"github.com/redis/go-redis/v9"
 )
 
-type VoterList struct {
-	Voters map[uint]Voter //A map of VoterIDs as keys and Voter structs as values
+type VoterDB struct {
+	redisClient *redis.Client
 }
 
-var voterList VoterList
-
 // New is a constructor function that returns a pointer to a new
-// VoterList struct.  It takes a single string argument that is the
-// name of the file that will be used to store the VoterList items.
+// VoterDB struct.  It takes a single string argument that is the
+// name of the file that will be used to store the VoterDB items.
 // If the file doesn't exist, it will be created.  If the file
-// does exist, it will be loaded into the VoterList struct.
-func New() (*VoterList, error) {
+// does exist, it will be loaded into the VoterDB struct.
+func New(redisClient *redis.Client) (*VoterDB, error) {
 
-	voterList := &VoterList{
-		Voters: make(map[uint]Voter),
+	voterList := &VoterDB{
+		redisClient: redisClient,
+	}
+
+	// ensure the connection actually works
+	_, err := redisClient.Ping(context.Background()).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis session failed: %w", err)
 	}
 
 	return voterList, nil
 }
 
+// returns the Redis key of a voter given the voter struct
+func voterKey(v Voter) string {
+	return idKey(v.VoterId)
+}
+
+// returns the Redis key of a voter given the voter id
+func idKey(id uint) string {
+	return fmt.Sprintf("voter:%d", id)
+}
+
+func wildcardKey() string {
+	return "voter:*"
+}
+
+// returns a JSONPath expression to extract the given poll id
+// from a voter document
+func pollIdPath(id uint) string {
+	return fmt.Sprintf("$.history[?(@.poll_id==%d)]", id)
+}
+
 //------------------------------------------------------------
-// THESE ARE THE PUBLIC FUNCTIONS THAT SUPPORT OUR TODO APP
+// THESE ARE THE PUBLIC FUNCTIONS THAT SUPPORT OUR VOTER APP
 //------------------------------------------------------------
 
-// AddItem accepts a Voter and adds it to the DB.
-// Preconditions:   (1) The database file must exist and be a valid
-//
-//					(2) The item must not already exist in the DB
-//	    				because we use the item.Id as the key, this
-//						function must check if the item already
-//	    				exists in the DB, if so, return an error
-//
-// Postconditions:
-//
-//	 (1) The item will be added to the DB
-//		(2) The DB file will be saved with the item added
-//		(3) If there is an error, it will be returned
-func (vl *VoterList) AddVoter(item Voter) error {
+func (db *VoterDB) AddVoter(ctx context.Context, item Voter) error {
+	key := voterKey(item)
 
 	//Before we add an item to the DB, lets make sure
 	//it does not exist, if it does, return an error
-	_, ok := vl.Voters[item.VoterId]
-	if ok {
+	oldVoter, err := db.redisClient.JSONGet(ctx, key, "$").Result()
+	if oldVoter != "" {
 		return errors.New("voter already exists")
+	}
+	if err != nil {
+		return fmt.Errorf("checking duplicate voter: %w", err)
 	}
 
 	//Now that we know the item doesn't exist, lets add it to our map
-	vl.Voters[item.VoterId] = item
+	_, err = db.redisClient.JSONSet(ctx, key, "$", item).Result()
+	if err != nil {
+		return fmt.Errorf("add voter: %w", err)
+	}
 
 	//If everything is ok, return nil for the error
 	return nil
 }
 
-// DeleteItem accepts an item id and removes it from the DB.
-// Preconditions:   (1) The database file must exist and be a valid
-//
-//					(2) The item must exist in the DB
-//	    				because we use the item.Id as the key, this
-//						function must check if the item already
-//	    				exists in the DB, if not, return an error
-//
-// Postconditions:
-//
-//	 (1) The item will be removed from the DB
-//		(2) The DB file will be saved with the item removed
-//		(3) If there is an error, it will be returned
-func (vl *VoterList) DeleteVoter(id uint) error {
+func (db *VoterDB) DeleteVoter(ctx context.Context, id uint) error {
+	key := idKey(id)
 
 	// we should if item exists before trying to delete it
 	// this is a good practice, return an error if the
 	// item does not exist
-	_, ok := vl.Voters[id]
-	if !ok {
+	_, err := db.fetchVoter(ctx, key)
+	if err != nil {
 		return errors.New("voter not found")
 	}
 
-	//Now lets use the built-in go delete() function to remove
-	//the item from our map
-	delete(vl.Voters, id)
+	_, err = db.redisClient.Del(ctx, key).Result()
+	if err != nil {
+		return fmt.Errorf("deleting voter: %w", err)
+	}
 
 	return nil
 }
 
 // DeleteAll removes all items from the DB.
-// It will be exposed via a DELETE /todo endpoint
-func (vl *VoterList) DeleteAll() error {
+func (db *VoterDB) DeleteAll(ctx context.Context) error {
 	//To delete everything, we can just create a new map
 	//and assign it to our existing map.  The garbage collector
 	//will clean up the old map for us
-	vl.Voters = make(map[uint]Voter)
+	db.redisClient.FlushDB(ctx)
 
 	return nil
 }
 
-// UpdateItem accepts a Voter and updates it in the DB.
-// Preconditions:   (1) The database file must exist and be a valid
-//
-//					(2) The item must exist in the DB
-//	    				because we use the item.Id as the key, this
-//						function must check if the item already
-//	    				exists in the DB, if not, return an error
-//
-// Postconditions:
-//
-//	 (1) The item will be updated in the DB
-//		(2) The DB file will be saved with the item updated
-//		(3) If there is an error, it will be returned
-func (vl *VoterList) UpdateVoter(item Voter) error {
+func (db *VoterDB) UpdateVoter(ctx context.Context, item Voter) error {
+	key := voterKey(item)
 
 	// Check if item exists before trying to update it
 	// this is a good practice, return an error if the
 	// item does not exist
-	_, ok := vl.Voters[item.VoterId]
-	if !ok {
+	_, err := db.fetchVoter(ctx, key)
+	if err != nil {
 		return errors.New("voter does not exist")
 	}
 
 	//Now that we know the item exists, lets update it
-	vl.Voters[item.VoterId] = item
+	_, err = db.redisClient.JSONSet(ctx, key, "$", item).Result()
+	if err != nil {
+		return fmt.Errorf("updating voter: %w", err)
+	}
 
 	return nil
 }
 
-func (vl *VoterList) GetHistoryByPollId(userId, pollId uint) (VoterHistory, error) {
-	v, ok := vl.Voters[userId]
-	if !ok {
-		return VoterHistory{}, errors.New("voter does not exist")
+func (db *VoterDB) fetchHistory(ctx context.Context, userId, pollId uint) (VoterHistory, error) {
+	key := idKey(userId)
+
+	value, err := db.redisClient.JSONGet(ctx, key, pollIdPath(pollId)).Result()
+	if err != nil {
+		return VoterHistory{}, fmt.Errorf("get history by poll id: %w", err)
 	}
 
-	for i := range v.VoteHistory {
-		if v.VoteHistory[i].PollId == pollId {
-			return v.VoteHistory[i], nil
-		}
+	var vh []VoterHistory
+	err = json.Unmarshal([]byte(value), &vh)
+	if err != nil {
+		return VoterHistory{}, fmt.Errorf("unmarshaling vote history: %w", err)
 	}
-	return VoterHistory{}, errors.New("poll not found in voter history")
+
+	if len(vh) <= 0 {
+		return VoterHistory{}, errors.New("poll not found in vote history")
+	}
+	return vh[0], nil
 }
 
-func (vl *VoterList) AddHistoryByPollId(userId, pollId uint, newHistory VoterHistory) (VoterHistory, error) {
-	v, ok := vl.Voters[userId]
-	if !ok {
-		return VoterHistory{}, errors.New("voter does not exist")
+func (db *VoterDB) GetHistoryByPollId(ctx context.Context, userId, pollId uint) (VoterHistory, error) {
+	return db.fetchHistory(ctx, userId, pollId)
+}
+
+func (db *VoterDB) AddHistoryByPollId(ctx context.Context, userId, pollId uint, newHistory VoterHistory) (VoterHistory, error) {
+	key := idKey(userId)
+
+	// ensure this history does not already exist
+	_, err := db.fetchHistory(ctx, userId, pollId)
+	if err == nil {
+		return VoterHistory{}, errors.New("history already exists")
 	}
 
-	for i := range v.VoteHistory {
-		if v.VoteHistory[i].PollId == pollId {
-			return VoterHistory{}, errors.New("voter history already exists for that poll")
-		}
+	newHistoryJson, err := json.Marshal(newHistory)
+	if err != nil {
+		return VoterHistory{}, fmt.Errorf("marshalling history entry: %w", err)
 	}
 
-	v.VoteHistory = append(v.VoteHistory, newHistory)
-	vl.Voters[userId] = v
+	_, err = db.redisClient.JSONArrAppend(ctx, key, "$.history", newHistoryJson).Result()
+	if err != nil {
+		return VoterHistory{}, fmt.Errorf("adding history by poll id: %w", err)
+	}
 
 	return newHistory, nil
 }
 
-func (vl *VoterList) UpdateHistoryByPollId(userId, pollId uint, newHistory VoterHistory) (VoterHistory, error) {
-	v, ok := vl.Voters[userId]
-	if !ok {
-		return VoterHistory{}, errors.New("voter does not exist")
+func (db *VoterDB) UpdateHistoryByPollId(ctx context.Context, userId, pollId uint, newHistory VoterHistory) (VoterHistory, error) {
+	key := idKey(userId)
+	path := pollIdPath(pollId)
+
+	// ensure this history exists
+	_, err := db.fetchHistory(ctx, userId, pollId)
+	if err != nil {
+		return VoterHistory{}, errors.New("history does not exist")
 	}
 
-	for i := range v.VoteHistory {
-		if v.VoteHistory[i].PollId == pollId {
-			vl.Voters[userId].VoteHistory[i] = newHistory
-			return newHistory, nil
+	_, err = db.redisClient.JSONSet(ctx, key, path, newHistory).Result()
+	if err != nil {
+		return VoterHistory{}, fmt.Errorf("updating history by poll id: %w", err)
+	}
+
+	return newHistory, nil
+}
+
+func (db *VoterDB) DeleteHistoryByPollId(ctx context.Context, userId, pollId uint) error {
+	key := idKey(userId)
+	path := pollIdPath(pollId)
+
+	// ensure this history exists
+	_, err := db.fetchHistory(ctx, userId, pollId)
+	if err != nil {
+		return errors.New("history does not exist")
+	}
+
+	_, err = db.redisClient.JSONDel(ctx, key, path).Result()
+	if err != nil {
+		return fmt.Errorf("deleting history by poll id: %w", err)
+	}
+
+	return nil
+}
+
+func (db *VoterDB) fetchVoter(ctx context.Context, key string) (Voter, error) {
+	value, err := db.redisClient.JSONGet(ctx, key, "$").Result()
+	if err != nil {
+		return Voter{}, fmt.Errorf("get voter by id: %w", err)
+	}
+
+	var v []Voter
+	err = json.Unmarshal([]byte(value), &v)
+	if err != nil {
+		return Voter{}, fmt.Errorf("unmarshaling voter: %w", err)
+	}
+
+	return v[0], nil
+}
+
+func (db *VoterDB) GetVoter(ctx context.Context, id uint) (Voter, error) {
+	key := idKey(id)
+	return db.fetchVoter(ctx, key)
+}
+
+// GetAllVoters returns a list of every registered voter
+// Warning! runs N+1 gets
+func (db *VoterDB) GetAllVoters(ctx context.Context) ([]Voter, error) {
+	allKeys, err := db.redisClient.Keys(ctx, wildcardKey()).Result()
+	if err != nil {
+		return nil, fmt.Errorf("getting all voter keys: %w", err)
+	}
+
+	voters := make([]Voter, 0, len(allKeys))
+
+	// fetch the JSON object for every matching key and append them to a list
+	// to be returned to the caller
+	for _, key := range allKeys {
+		voter, err := db.fetchVoter(ctx, key)
+		if err != nil {
+			return nil, fmt.Errorf("getting all voters (voter %s): %w", key, err)
 		}
-	}
-
-	return VoterHistory{}, errors.New("poll not found in voter history")
-}
-
-func (vl *VoterList) DeleteHistoryByPollId(userId, pollId uint) error {
-	v, ok := vl.Voters[userId]
-	if !ok {
-		return errors.New("voter does not exist")
-	}
-
-	for i := range v.VoteHistory {
-		if v.VoteHistory[i].PollId == pollId {
-			newHistory := slices.Delete(v.VoteHistory, i, i+1)
-			v.VoteHistory = newHistory
-			vl.Voters[userId] = v
-
-			return nil
-		}
-	}
-
-	return errors.New("poll not found in voter history")
-}
-
-func (vl *VoterList) GetVoter(id uint) (Voter, error) {
-
-	// Check if item exists before trying to get it
-	// this is a good practice, return an error if the
-	// item does not exist
-	item, ok := vl.Voters[id]
-	if !ok {
-		return Voter{}, errors.New("voter does not exist")
-	}
-
-	return item, nil
-}
-
-func (vl *VoterList) GetAllVoters() ([]Voter, error) {
-
-	//Now that we have the DB loaded, lets crate a slice
-	var voters []Voter
-
-	//Now lets iterate over our map and add each item to our slice
-	for _, item := range vl.Voters {
-		voters = append(voters, item)
+		voters = append(voters, voter)
 	}
 
 	//Now that we have all of our items in a slice, return it
 	return voters, nil
+}
+
+func (db *VoterDB) HealthCheck(ctx context.Context) string {
+	_, err := db.redisClient.Ping(ctx).Result()
+	if err != nil {
+		return err.Error()
+	}
+	return "ok"
 }

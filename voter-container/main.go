@@ -1,59 +1,36 @@
 package main
 
 import (
-	"flag"
-	"fmt"
-	"log"
-	"os"
-
 	"drexel.edu/voter-api/api"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/redis/go-redis/v9"
+	"log"
+	"os"
 )
 
 // Global variables to hold the command line flags to drive the voter CLI
 // application
 var (
-	hostFlag string
-	portFlag uint
+	redisAddr  string
+	listenAddr string
 )
 
-// processCmdLineFlags parses the command line flags for our CLI
-//
-// voter: This function uses the flag package to parse the command line
-//		 flags.  The flag package is not very flexible and can lead to
-//		 some confusing code.
-
-//			 REQUIRED:     Study the code below, and make sure you understand
-//						   how it works.  Go online and readup on how the
-//						   flag package works.  Then, write a nice comment
-//				  		   block to document this function that highights that
-//						   you understand how it works.
-//
-//			 EXTRA CREDIT: The best CLI and command line processor for
-//						   go is called Cobra.  Refactor this function to
-//						   use it.  See github.com/spf13/cobra for information
-//						   on how to use it.
-//
-//	 YOUR ANSWER: <GOES HERE>
-func processCmdLineFlags() {
-
-	//Note some networking lingo, some frameworks start the server on localhost
-	//this is a local-only interface and is fine for testing but its not accessible
-	//from other machines.  To make the server accessible from other machines, we
-	//need to listen on an interface, that could be an IP address, but modern
-	//cloud servers may have multiple network interfaces for scale.  With TCP/IP
-	//the address 0.0.0.0 instructs the network stack to listen on all interfaces
-	//We set this up as a flag so that we can overwrite it on the command line if
-	//needed
-	flag.StringVar(&hostFlag, "h", "0.0.0.0", "Listen on all interfaces")
-	flag.UintVar(&portFlag, "p", 1080, "Default Port")
-
-	flag.Parse()
+func getEnvOrDefault(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		value = defaultValue
+	}
+	return value
 }
 
+func processEnvVars() {
+	redisAddr = getEnvOrDefault("VOTER_API_REDIS_ADDR", "0.0.0.0:6379")
+	listenAddr = getEnvOrDefault("VOTER_API_LISTEN_ADDR", "0.0.0.0:1080")
+}
 func addRoutes(app *fiber.App, apiHandler *api.VoterAPI) {
 	//HTTP Standards for "REST" APIS
 	//GET - Read/Query
@@ -84,14 +61,21 @@ func addRoutes(app *fiber.App, apiHandler *api.VoterAPI) {
 // the command line flags and then uses the db package to perform the
 // requested operation
 func main() {
-	processCmdLineFlags()
+	processEnvVars()
 
 	app := fiber.New()
 	app.Use(cors.New())
 	app.Use(recover.New())
 	app.Use(logger.New())
 
-	apiHandler, err := api.New()
+	log.Println("Connecting to Redis on ", redisAddr)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: "",
+		DB:       0,
+	})
+
+	apiHandler, err := api.New(redisClient)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -99,7 +83,6 @@ func main() {
 
 	addRoutes(app, apiHandler)
 
-	serverPath := fmt.Sprintf("%s:%d", hostFlag, portFlag)
-	log.Println("Starting server on ", serverPath)
-	app.Listen(serverPath)
+	log.Println("Starting server on ", listenAddr)
+	app.Listen(listenAddr)
 }

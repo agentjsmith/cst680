@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/redis/go-redis/v9"
 	"log"
 	"net/http"
 	"time"
@@ -12,14 +13,14 @@ import (
 // The api package creates and maintains a reference to the data handler
 // this is a good design practice
 type VoterAPI struct {
-	db           *db.VoterList
+	db           *db.VoterDB
 	bootTime     time.Time
 	transactions uint
 	errors       uint
 }
 
-func New() (*VoterAPI, error) {
-	dbHandler, err := db.New()
+func New(redisClient *redis.Client) (*VoterAPI, error) {
+	dbHandler, err := db.New(redisClient)
 	if err != nil {
 		return nil, err
 	}
@@ -28,31 +29,20 @@ func New() (*VoterAPI, error) {
 	return &VoterAPI{db: dbHandler, bootTime: now}, nil
 }
 
-// implementation for GET /todo
-// returns all todos
 func (va *VoterAPI) GetAllVoters(c *fiber.Ctx) error {
 	va.transactions++
 
-	todoList, err := va.db.GetAllVoters()
+	voterList, err := va.db.GetAllVoters(c.Context())
 	if err != nil {
 		va.errors++
 		log.Println("Error Getting All Voters: ", err)
 		return fiber.NewError(http.StatusNotFound,
 			"Error Getting All Voters")
 	}
-	//Note that the database returns a nil slice if there are no items
-	//in the database.  We need to convert this to an empty slice
-	//so that the JSON marshalling works correctly.  We want to return
-	//an empty slice, not a nil slice. This will result in the json being []
-	if todoList == nil {
-		todoList = make([]db.Voter, 0)
-	}
 
-	return c.JSON(todoList)
+	return c.JSON(voterList)
 }
 
-// implementation for GET /todo/:id
-// returns a single todo
 func (va *VoterAPI) GetVoter(c *fiber.Ctx) error {
 	va.transactions++
 
@@ -67,7 +57,7 @@ func (va *VoterAPI) GetVoter(c *fiber.Ctx) error {
 
 	//Note that ParseInt always returns an int64, so we have to
 	//convert it to an int before we can use it.
-	voter, err := va.db.GetVoter(uint(id))
+	voter, err := va.db.GetVoter(c.Context(), uint(id))
 	if err != nil {
 		va.errors++
 		log.Println("Voter not found: ", err)
@@ -93,7 +83,7 @@ func (va *VoterAPI) GetVoterHistory(c *fiber.Ctx) error {
 
 	//Note that ParseInt always returns an int64, so we have to
 	//convert it to an int before we can use it.
-	voter, err := va.db.GetVoter(uint(id))
+	voter, err := va.db.GetVoter(c.Context(), uint(id))
 	if err != nil {
 		va.errors++
 		log.Println("Voter not found: ", err)
@@ -110,13 +100,13 @@ func (va *VoterAPI) GetVoterHistoryPoll(c *fiber.Ctx) error {
 	//id parameter using the Param() function, and then
 	//convert it to an int64 using the strconv package
 	id, err := c.ParamsInt("id")
-	poll_id, err2 := c.ParamsInt("pollid")
+	pollId, err2 := c.ParamsInt("pollid")
 	if err != nil || err2 != nil {
 		va.errors++
 		return fiber.NewError(http.StatusBadRequest)
 	}
 
-	pollHistory, err := va.db.GetHistoryByPollId(uint(id), uint(poll_id))
+	pollHistory, err := va.db.GetHistoryByPollId(c.Context(), uint(id), uint(pollId))
 	if err != nil {
 		va.errors++
 		log.Println("Voter history not found: ", err)
@@ -130,7 +120,7 @@ func (va *VoterAPI) AddVoterHistoryPoll(c *fiber.Ctx) error {
 	va.transactions++
 
 	id, err := c.ParamsInt("id")
-	poll_id, err2 := c.ParamsInt("pollid")
+	pollId, err2 := c.ParamsInt("pollid")
 	if err != nil || err2 != nil {
 		va.errors++
 		return fiber.NewError(http.StatusBadRequest)
@@ -144,7 +134,13 @@ func (va *VoterAPI) AddVoterHistoryPoll(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusBadRequest)
 	}
 
-	result, err := va.db.AddHistoryByPollId(uint(id), uint(poll_id), newPollHistory)
+	if uint(pollId) != newPollHistory.PollId {
+		va.errors++
+		log.Printf("Duplicate poll id %d for voter %d", pollId, id)
+		return fiber.NewError(http.StatusBadRequest)
+	}
+
+	result, err := va.db.AddHistoryByPollId(c.Context(), uint(id), uint(pollId), newPollHistory)
 	if err != nil {
 		va.errors++
 		return fiber.NewError(http.StatusInternalServerError)
@@ -158,7 +154,7 @@ func (va *VoterAPI) UpdateVoterHistoryPoll(c *fiber.Ctx) error {
 	va.transactions++
 
 	id, err := c.ParamsInt("id")
-	poll_id, err2 := c.ParamsInt("pollid")
+	pollId, err2 := c.ParamsInt("pollid")
 	if err != nil || err2 != nil {
 		va.errors++
 		return fiber.NewError(http.StatusBadRequest)
@@ -171,7 +167,7 @@ func (va *VoterAPI) UpdateVoterHistoryPoll(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusBadRequest)
 	}
 
-	history, err := va.db.UpdateHistoryByPollId(uint(id), uint(poll_id), newPollHistory)
+	history, err := va.db.UpdateHistoryByPollId(c.Context(), uint(id), uint(pollId), newPollHistory)
 	if err != nil {
 		va.errors++
 		return fiber.NewError(http.StatusInternalServerError)
@@ -185,13 +181,13 @@ func (va *VoterAPI) DeleteVoterHistoryPoll(c *fiber.Ctx) error {
 	va.transactions++
 
 	id, err := c.ParamsInt("id")
-	poll_id, err2 := c.ParamsInt("pollid")
+	pollId, err2 := c.ParamsInt("pollid")
 	if err != nil || err2 != nil {
 		va.errors++
 		return fiber.NewError(http.StatusBadRequest)
 	}
 
-	err = va.db.DeleteHistoryByPollId(uint(id), uint(poll_id))
+	err = va.db.DeleteHistoryByPollId(c.Context(), uint(id), uint(pollId))
 	if err != nil {
 		va.errors++
 		return fiber.NewError(http.StatusInternalServerError)
@@ -201,8 +197,6 @@ func (va *VoterAPI) DeleteVoterHistoryPoll(c *fiber.Ctx) error {
 
 }
 
-// implementation for POST /todo
-// adds a new todo
 func (va *VoterAPI) AddVoter(c *fiber.Ctx) error {
 	va.transactions++
 
@@ -226,7 +220,7 @@ func (va *VoterAPI) AddVoter(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusBadRequest)
 	}
 
-	if err := va.db.AddVoter(voter); err != nil {
+	if err := va.db.AddVoter(c.Context(), voter); err != nil {
 		va.errors++
 		log.Println("Error adding item: ", err)
 		return fiber.NewError(http.StatusInternalServerError)
@@ -235,8 +229,6 @@ func (va *VoterAPI) AddVoter(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(voter)
 }
 
-// implementation for PUT /todo
-// Web api standards use PUT for Updates
 func (va *VoterAPI) UpdateVoter(c *fiber.Ctx) error {
 	va.transactions++
 
@@ -263,7 +255,7 @@ func (va *VoterAPI) UpdateVoter(c *fiber.Ctx) error {
 	// This function is supposed to update the voter details only,
 	// not the history, so we need to save the old history and use
 	// it to replace whatever was passed in.
-	oldVoter, err := va.db.GetVoter(uint(id))
+	oldVoter, err := va.db.GetVoter(c.Context(), uint(id))
 	if err != nil {
 		va.errors++
 		log.Println("User not found for update: ", err)
@@ -272,7 +264,7 @@ func (va *VoterAPI) UpdateVoter(c *fiber.Ctx) error {
 
 	voter.VoteHistory = oldVoter.VoteHistory
 
-	if err := va.db.UpdateVoter(voter); err != nil {
+	if err := va.db.UpdateVoter(c.Context(), voter); err != nil {
 		va.errors++
 		log.Println("Error updating item: ", err)
 		return fiber.NewError(http.StatusInternalServerError)
@@ -281,8 +273,6 @@ func (va *VoterAPI) UpdateVoter(c *fiber.Ctx) error {
 	return c.JSON(voter)
 }
 
-// implementation for DELETE /todo/:id
-// deletes a todo
 func (va *VoterAPI) DeleteVoter(c *fiber.Ctx) error {
 	va.transactions++
 
@@ -292,7 +282,7 @@ func (va *VoterAPI) DeleteVoter(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusBadRequest)
 	}
 
-	if err := va.db.DeleteVoter(uint(id)); err != nil {
+	if err := va.db.DeleteVoter(c.Context(), uint(id)); err != nil {
 		va.errors++
 		log.Println("Error deleting item: ", err)
 		return fiber.NewError(http.StatusInternalServerError)
@@ -301,12 +291,10 @@ func (va *VoterAPI) DeleteVoter(c *fiber.Ctx) error {
 	return c.Status(http.StatusOK).SendString("Delete OK")
 }
 
-// implementation for DELETE /todo
-// deletes all todos
 func (va *VoterAPI) DeleteAllVoters(c *fiber.Ctx) error {
 	va.transactions++
 
-	if err := va.db.DeleteAll(); err != nil {
+	if err := va.db.DeleteAll(c.Context()); err != nil {
 		va.errors++
 		log.Println("Error deleting all items: ", err)
 		return fiber.NewError(http.StatusInternalServerError)
@@ -324,9 +312,12 @@ type HealthCheckResult struct {
 	Uptime       uint   `json:"uptime_seconds"`
 	Transactions uint   `json:"transaction_count"`
 	Errors       uint   `json:"error_count"`
+	DbHealth     string `json:"database_status"`
 }
 
 func (va *VoterAPI) HealthCheck(c *fiber.Ctx) error {
+	dbh := va.db.HealthCheck(c.Context())
+
 	return c.Status(http.StatusOK).
 		JSON(HealthCheckResult{
 			Status:       "ok",
@@ -334,5 +325,6 @@ func (va *VoterAPI) HealthCheck(c *fiber.Ctx) error {
 			Uptime:       uint(time.Now().Sub(va.bootTime).Seconds()),
 			Transactions: va.transactions,
 			Errors:       va.errors,
+			DbHealth:     dbh,
 		})
 }
